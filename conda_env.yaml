@@ -1,0 +1,16 @@
+name: mobile-phone-price-classification
+channels:
+  - pytorch
+dependencies:
+  - python=3.10
+  - pip:
+    - numpy
+    - pandas
+    - nltk
+    - matplotlib
+    - torch
+    - torchvision
+    - torchaudio
+    - torchtext
+    - ipykernel
+    - pylint
