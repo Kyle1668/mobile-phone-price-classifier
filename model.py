@@ -1,7 +1,8 @@
+"""Used to create the neurel network"""
 import torch
+import pandas as pd
 from torch import nn
 from torch.utils.data import Dataset, DataLoader
-import pandas as pd
 
 
 class PhonePricesDataSet(Dataset):
