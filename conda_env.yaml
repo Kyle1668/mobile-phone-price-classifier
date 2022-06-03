@@ -14,3 +14,4 @@ dependencies:
     - torchtext
     - ipykernel
     - pylint
+    - black
