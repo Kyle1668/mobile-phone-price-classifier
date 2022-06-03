@@ -15,10 +15,10 @@ class PhonePricesDataSet(Dataset):
 
     def __getitem__(self, index):
         phone_example: pd.Series = self.data.iloc[index]
-        features = phone_example.drop("price_range")
-        features = features.apply(lambda val: float(val))
+        features_series = phone_example.drop("price_range")
+        features_series = features_series.apply(lambda val: float(val))
+        features_tensor = torch.Tensor(list(features_series.values))
         labels = int(phone_example["price_range"])
-        features_tensor = torch.Tensor(list(features.values))
         return (features_tensor, labels)
 
     def __len__(self):
