@@ -3,7 +3,7 @@ from tqdm import tqdm
 import torch
 import numpy as np
 import pandas as pd
-from torch import nn
+from torch import nn, optim
 from torch.utils.data import Dataset, DataLoader
 
 
@@ -29,78 +29,96 @@ class PhonePricesDataSet(Dataset):
 
 
 class PhonePriceClassifier(nn.Module):
-    """Some Information about PhonePriceClassifier"""
+    """A feed-forward classification network for predicting phone price range"""
 
-    def __init__(self):
+    def __init__(self, dropout_percent=0.25):
         super(PhonePriceClassifier, self).__init__()
         self.linear_relu_stack = nn.Sequential(
             nn.Linear(20, 512),
+            nn.Dropout(dropout_percent),
             nn.ReLU(),
             nn.Linear(512, 512),
+            nn.Dropout(dropout_percent),
             nn.ReLU(),
             nn.Linear(512, 4),
-            nn.Softmax(dim=-1),
+            nn.Softmax(0),
         )
 
-    def forward(self, x):
-        logits = self.linear_relu_stack(x)
+    def forward(self, input_vector):
+        """Make an inference
+
+        Args:
+            x (Tensor): A 20 dimensional tensor
+
+        Returns:
+            _type_: _description_
+        """
+        logits = self.linear_relu_stack(input_vector)
         return logits
 
 
-if __name__ == "__main__":
-    training_set = PhonePricesDataSet("./data/train.csv")
+def train_model(model: PhonePriceClassifier, training_dataloader: DataLoader, optimizer: optim.Optimizer, criterion: nn.CrossEntropyLoss):
+    model.train()
+    running_loss = 0.0
+    batch_counter = 0
+
+    for features, labels in tqdm(training_dataloader, "Training"):
+        # Increment the batch counter for later on calculating the mean loss
+        batch_counter += 1
+
+        # Set all the gradients to zero allowing the optimization to start with a blank slate.
+        optimizer.zero_grad()
+
+        # Perform inferences on the training batch
+        logits = model(features)
+
+        # Calculate the average loss across all the inferences
+        loss = criterion(logits, labels)
+
+        # Update the loss across the the batches
+        running_loss += loss.item() * features.size(0)
+
+        # Calculate all the necessary gradient changes using back progegation
+        loss.backward()
+
+        # Update the model parameters based off the gradient calculated during back propegation
+        optimizer.step()
+
+    mean_loss = running_loss / len(training_dataloader)
+    print(f"\nTrain Mean Loss = {mean_loss}\n")
+
+
+def evaluate_model(model: PhonePriceClassifier, test_dataloader: DataLoader, criterion: nn.CrossEntropyLoss):
+    model.eval()
+    running_loss = 0.0
+
+    for features, labels in tqdm(test_dataloader, "Test"):
+        logits = model(features)
+        loss = criterion(logits, labels)
+        running_loss += loss.item() * features.size(0)
+
+    mean_loss = running_loss / len(test_dataloader)
+    print(f"\nTest Mean Loss = {mean_loss}\n")
+
+
+def main():
+     # Set up data for feeding into our model during training and evaluation
     test_set = PhonePricesDataSet("./data/test.csv")
-
-    training_dataloader = DataLoader(training_set, batch_size=64, shuffle=True)
+    training_set = PhonePricesDataSet("./data/train.csv")
     test_dataloader = DataLoader(test_set, batch_size=64, shuffle=True)
+    training_dataloader = DataLoader(training_set, batch_size=64, shuffle=True)
 
-    EPOCHS = 5
-    min_valid_loss = np.inf
+    # Init the training setup
+    epochs = 5
     model = PhonePriceClassifier()
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
 
-    for epoch in range(EPOCHS):
-        train_loss = 0.0
-        for data, labels in tqdm(training_dataloader):
-            # Transfer Data to GPU if available
-            if torch.cuda.is_available():
-                data, labels = data.cuda(), labels.cuda()
+    for epoch_counter in range(1, epochs + 1):
+        print(f"----------------------------- Epoch {epoch_counter} -----------------------------------")
+        train_model(model, training_dataloader, optimizer, criterion)
+        evaluate_model(model, test_dataloader, criterion)
 
-            # Clear the gradients
-            optimizer.zero_grad()
-            # Forward Pass
-            target = model(data)
-            # Find the Loss
-            loss = criterion(target, labels)
-            # Calculate gradients
-            loss.backward()
-            # Update Weights
-            optimizer.step()
-            # Calculate Loss
-            train_loss += loss.item()
 
-        print(
-            f"Epoch {epoch+1} \t\t Training Loss: {train_loss / len(training_dataloader)}"
-        )
-
-        valid_loss = 0.0
-        model.eval()  # Optional when not using Model Specific layer
-        for data, labels in test_dataloader:
-            if torch.cuda.is_available():
-                data, labels = data.cuda(), labels.cuda()
-
-            target = model(data)
-            loss = criterion(target, labels)
-            valid_loss = loss.item() * data.size(0)
-
-        print(
-            f"Epoch {epoch+1} \t\t Training Loss: {train_loss / len(training_dataloader)} \t\t Validation Loss: {valid_loss / len(test_dataloader)}"
-        )
-        if min_valid_loss > valid_loss:
-            print(
-                f"Validation Loss Decreased({min_valid_loss:.6f}--->{valid_loss:.6f}) \t Saving The Model"
-            )
-            min_valid_loss = valid_loss
-            # Saving State Dict
-            torch.save(model.state_dict(), "saved_model.pth")
+if __name__ == "__main__":
+    main()
