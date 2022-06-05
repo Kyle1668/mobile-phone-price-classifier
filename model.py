@@ -1,7 +1,6 @@
 """Used to create the neurel network"""
 from tqdm import tqdm
 import torch
-import numpy as np
 import pandas as pd
 from torch import nn, optim
 from torch.utils.data import Dataset, DataLoader
@@ -31,10 +30,19 @@ class PhonePricesDataSet(Dataset):
 class PhonePriceClassifier(nn.Module):
     """A feed-forward classification network for predicting phone price range"""
 
-    def __init__(self, dropout_percent=0.25):
+    def __init__(self, dropout_percent=0.1):
         super(PhonePriceClassifier, self).__init__()
         self.linear_relu_stack = nn.Sequential(
             nn.Linear(20, 512),
+            nn.ReLU(),
+            nn.Dropout(dropout_percent),
+            nn.Linear(512, 512),
+            nn.ReLU(),
+            nn.Dropout(dropout_percent),
+            nn.Linear(512, 512),
+            nn.ReLU(),
+            nn.Dropout(dropout_percent),
+            nn.Linear(512, 512),
             nn.ReLU(),
             nn.Dropout(dropout_percent),
             nn.Linear(512, 512),
@@ -44,7 +52,7 @@ class PhonePriceClassifier(nn.Module):
             nn.ReLU(),
             nn.Dropout(dropout_percent),
             nn.Linear(100, 4),
-            # nn.Softmax(1),
+            # nn.Softmax(1)
         )
 
     def forward(self, input_vector):
@@ -94,16 +102,19 @@ def train_batch(model: PhonePriceClassifier, features: torch.Tensor, labels: tor
 def evaluate_model(model: PhonePriceClassifier, test_dataloader: DataLoader, criterion: nn.CrossEntropyLoss):
     model.eval()
     running_loss = 0.0
+    correct_inferences = 0
 
     for features, labels in tqdm(test_dataloader, "Test"):
         with torch.no_grad():
             logits = model(features)
-            loss = criterion(logits, labels)
 
+        loss = criterion(logits, labels)
         running_loss += loss.item() * features.size(0)
+        correct_inferences += (torch.argmax(logits, 1) == labels).int().sum().item()
 
-    mean_loss = running_loss / len(test_dataloader)
-    print(f"\nTest Mean Loss = {mean_loss}\n")
+    mean_loss = running_loss / len(test_dataloader.dataset)
+    accuracy = 100 * (correct_inferences / len(test_dataloader.dataset))
+    print(f"\nTest Mean Loss = {mean_loss} | Accuracy = {accuracy}%\n")
 
 
 def main():
@@ -114,7 +125,7 @@ def main():
     training_dataloader = DataLoader(training_set, batch_size=64, shuffle=True)
 
     # Init the training setup
-    epochs = 10
+    epochs = 100
     model = PhonePriceClassifier()
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
