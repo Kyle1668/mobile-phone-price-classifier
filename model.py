@@ -35,13 +35,16 @@ class PhonePriceClassifier(nn.Module):
         super(PhonePriceClassifier, self).__init__()
         self.linear_relu_stack = nn.Sequential(
             nn.Linear(20, 512),
-            nn.Dropout(dropout_percent),
             nn.ReLU(),
+            nn.Dropout(dropout_percent),
             nn.Linear(512, 512),
-            nn.Dropout(dropout_percent),
             nn.ReLU(),
-            nn.Linear(512, 4),
-            nn.Softmax(0),
+            nn.Dropout(dropout_percent),
+            nn.Linear(512, 100),
+            nn.ReLU(),
+            nn.Dropout(dropout_percent),
+            nn.Linear(100, 4),
+            # nn.Softmax(1),
         )
 
     def forward(self, input_vector):
@@ -60,32 +63,32 @@ class PhonePriceClassifier(nn.Module):
 def train_model(model: PhonePriceClassifier, training_dataloader: DataLoader, optimizer: optim.Optimizer, criterion: nn.CrossEntropyLoss):
     model.train()
     running_loss = 0.0
-    batch_counter = 0
 
     for features, labels in tqdm(training_dataloader, "Training"):
-        # Increment the batch counter for later on calculating the mean loss
-        batch_counter += 1
-
-        # Set all the gradients to zero allowing the optimization to start with a blank slate.
-        optimizer.zero_grad()
-
-        # Perform inferences on the training batch
-        logits = model(features)
-
-        # Calculate the average loss across all the inferences
-        loss = criterion(logits, labels)
-
-        # Update the loss across the the batches
-        running_loss += loss.item() * features.size(0)
-
-        # Calculate all the necessary gradient changes using back progegation
-        loss.backward()
-
-        # Update the model parameters based off the gradient calculated during back propegation
-        optimizer.step()
+        loss = train_batch(model, features, labels, optimizer, criterion)
+        running_loss += loss * features.size(0)
 
     mean_loss = running_loss / len(training_dataloader)
     print(f"\nTrain Mean Loss = {mean_loss}\n")
+
+
+def train_batch(model: PhonePriceClassifier, features: torch.Tensor, labels: torch.Tensor, optimizer: optim.Optimizer, criterion: nn.CrossEntropyLoss) -> float:
+    # Set all the gradients to zero allowing the optimization to start with a blank slate.
+    optimizer.zero_grad()
+
+    # Perform inferences on the training batch
+    logits = model(features)
+
+    # Calculate the average loss across all the inferences
+    loss = criterion(logits, labels)
+
+    # Calculate all the necessary gradient changes using back progegation
+    loss.backward()
+
+    # Update the model parameters based off the gradient calculated during back propegation
+    optimizer.step()
+
+    return loss.item()
 
 
 def evaluate_model(model: PhonePriceClassifier, test_dataloader: DataLoader, criterion: nn.CrossEntropyLoss):
@@ -93,8 +96,10 @@ def evaluate_model(model: PhonePriceClassifier, test_dataloader: DataLoader, cri
     running_loss = 0.0
 
     for features, labels in tqdm(test_dataloader, "Test"):
-        logits = model(features)
-        loss = criterion(logits, labels)
+        with torch.no_grad():
+            logits = model(features)
+            loss = criterion(logits, labels)
+
         running_loss += loss.item() * features.size(0)
 
     mean_loss = running_loss / len(test_dataloader)
@@ -109,13 +114,13 @@ def main():
     training_dataloader = DataLoader(training_set, batch_size=64, shuffle=True)
 
     # Init the training setup
-    epochs = 5
+    epochs = 10
     model = PhonePriceClassifier()
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
 
     for epoch_counter in range(1, epochs + 1):
-        print(f"----------------------------- Epoch {epoch_counter} -----------------------------------")
+        print(f"\n--- Epoch {epoch_counter} ----\n")
         train_model(model, training_dataloader, optimizer, criterion)
         evaluate_model(model, test_dataloader, criterion)
 
