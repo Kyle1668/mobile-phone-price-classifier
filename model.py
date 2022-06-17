@@ -33,26 +33,14 @@ class PhonePriceClassifier(nn.Module):
     def __init__(self, dropout_percent=0.1):
         super(PhonePriceClassifier, self).__init__()
         self.linear_relu_stack = nn.Sequential(
-            nn.Linear(20, 512),
+            nn.Linear(18, 100),
             nn.ReLU(),
-            nn.Dropout(dropout_percent),
-            nn.Linear(512, 512),
+            nn.Linear(100, 100),
             nn.ReLU(),
+            nn.Linear(100, 100),
             nn.Dropout(dropout_percent),
-            nn.Linear(512, 512),
             nn.ReLU(),
-            nn.Dropout(dropout_percent),
-            nn.Linear(512, 512),
-            nn.ReLU(),
-            nn.Dropout(dropout_percent),
-            nn.Linear(512, 512),
-            nn.ReLU(),
-            nn.Dropout(dropout_percent),
-            nn.Linear(512, 100),
-            nn.ReLU(),
-            nn.Dropout(dropout_percent),
             nn.Linear(100, 4),
-            # nn.Softmax(1)
         )
 
     def forward(self, input_vector):
@@ -107,10 +95,9 @@ def evaluate_model(model: PhonePriceClassifier, test_dataloader: DataLoader, cri
     for features, labels in tqdm(test_dataloader, "Test"):
         with torch.no_grad():
             logits = model(features)
-
-        loss = criterion(logits, labels)
-        running_loss += loss.item() * features.size(0)
-        correct_inferences += (torch.argmax(logits, 1) == labels).int().sum().item()
+            loss = criterion(logits, labels)
+            running_loss += loss.item() * features.size(0)
+            correct_inferences += (torch.argmax(logits, 1) == labels).int().sum().item()
 
     mean_loss = running_loss / len(test_dataloader.dataset)
     accuracy = 100 * (correct_inferences / len(test_dataloader.dataset))
@@ -121,14 +108,14 @@ def main():
      # Set up data for feeding into our model during training and evaluation
     test_set = PhonePricesDataSet("./data/test.csv")
     training_set = PhonePricesDataSet("./data/train.csv")
-    test_dataloader = DataLoader(test_set, batch_size=64, shuffle=True)
-    training_dataloader = DataLoader(training_set, batch_size=64, shuffle=True)
+    test_dataloader = DataLoader(test_set, batch_size=16, shuffle=True)
+    training_dataloader = DataLoader(training_set, batch_size=16, shuffle=True)
 
     # Init the training setup
-    epochs = 100
+    epochs = 1000
     model = PhonePriceClassifier()
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    optimizer = optim.Adam(model.parameters(), lr=0.0003)
 
     for epoch_counter in range(1, epochs + 1):
         print(f"\n--- Epoch {epoch_counter} ----\n")
