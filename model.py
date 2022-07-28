@@ -2,7 +2,7 @@
 from tqdm import tqdm
 import torch
 import pandas as pd
-from torch import nn, optim
+from torch import nn, optim, cuda
 from torch.utils.data import Dataset, DataLoader
 
 
@@ -33,9 +33,10 @@ class PhonePriceClassifier(nn.Module):
     def __init__(self, dropout_percent=0.1):
         super(PhonePriceClassifier, self).__init__()
         self.linear_relu_stack = nn.Sequential(
-            nn.Linear(18, 100),
+            nn.Linear(20, 100),
             nn.ReLU(),
             nn.Linear(100, 100),
+            nn.Dropout(dropout_percent),
             nn.ReLU(),
             nn.Linear(100, 100),
             nn.Dropout(dropout_percent),
@@ -59,9 +60,10 @@ class PhonePriceClassifier(nn.Module):
 def train_model(model: PhonePriceClassifier, training_dataloader: DataLoader, optimizer: optim.Optimizer, criterion: nn.CrossEntropyLoss):
     model.train()
     running_loss = 0.0
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
     for features, labels in tqdm(training_dataloader, "Training"):
-        loss = train_batch(model, features, labels, optimizer, criterion)
+        loss = train_batch(model, features.to(device), labels.to(device), optimizer, criterion)
         running_loss += loss * features.size(0)
 
     mean_loss = running_loss / len(training_dataloader)
@@ -91,8 +93,12 @@ def evaluate_model(model: PhonePriceClassifier, test_dataloader: DataLoader, cri
     model.eval()
     running_loss = 0.0
     correct_inferences = 0
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
     for features, labels in tqdm(test_dataloader, "Test"):
+        features = features.to(device)
+        labels = labels.to(device)
+
         with torch.no_grad():
             logits = model(features)
             loss = criterion(logits, labels)
@@ -116,6 +122,8 @@ def main():
     model = PhonePriceClassifier()
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=0.0003)
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    model.to(device)
 
     for epoch_counter in range(1, epochs + 1):
         print(f"\n--- Epoch {epoch_counter} ----\n")
