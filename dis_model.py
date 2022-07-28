@@ -65,7 +65,7 @@ def train_model(model, training_dataloader, optimizer, criterion, device):
     model.train()
     running_loss = 0.0
 
-    for features, labels in tqdm(training_dataloader, "Training"):
+    for features, labels in training_dataloader:
         loss = train_batch(model, features.to(device), labels.to(device), optimizer, criterion)
         running_loss += loss * features.size(0)
 
@@ -97,7 +97,7 @@ def evaluate_model(model, test_dataloader, criterion, device):
     running_loss = 0.0
     correct_inferences = 0
 
-    for features, labels in tqdm(test_dataloader, "Test"):
+    for features, labels in test_dataloader:
         with torch.no_grad():
             features = features.to(device)
             labels = labels.to(device)
@@ -115,17 +115,27 @@ def begin_training_run(rank, world_size):
      # Set up data for feeding into our model during training and evaluation
     test_set = PhonePricesDataSet("./data/test.csv")
     training_set = PhonePricesDataSet("./data/train.csv")
-    test_dataloader = DataLoader(test_set, batch_size=16, shuffle=True)
-    training_dataloader = DataLoader(training_set, batch_size=16, shuffle=True)
+    train_sampler = torch.utils.data.distributed.DistributedSampler(
+    	training_set,
+    	num_replicas=world_size,
+    	rank=rank
+    )
+    test_sampler = torch.utils.data.distributed.DistributedSampler(
+    	test_set,
+    	num_replicas=world_size,
+    	rank=rank
+    )
+    test_dataloader = DataLoader(test_set, batch_size=16, sampler=test_sampler)
+    training_dataloader = DataLoader(training_set, batch_size=16, sampler=train_sampler)
 
     # Init the training setup
-    epochs = 1000
+    epochs = 100
     rank = dist.get_rank()
     device = torch.device("cuda", rank) if torch.cuda.is_available() else torch.device("cpu", rank)
     model = PhonePriceClassifier().to(device)
     model = parallel.DistributedDataParallel(model)
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.0003)
+    optimizer = optim.Adam(model.parameters(), lr=0.003)
 
     for epoch_counter in range(1, epochs + 1):
         print(f"\n--- Epoch {epoch_counter} ----\n")
