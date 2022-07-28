@@ -6,6 +6,7 @@ import torch
 import pandas as pd
 from torch import nn, optim
 import torch.distributed as dist
+import torch.nn.parallel as parallel
 from torch.multiprocessing import Process
 from torch.utils.data import Dataset, DataLoader
 
@@ -60,12 +61,12 @@ class PhonePriceClassifier(nn.Module):
         return logits
 
 
-def train_model(model: PhonePriceClassifier, training_dataloader: DataLoader, optimizer: optim.Optimizer, criterion: nn.CrossEntropyLoss):
+def train_model(model, training_dataloader, optimizer, criterion, device):
     model.train()
     running_loss = 0.0
 
     for features, labels in tqdm(training_dataloader, "Training"):
-        loss = train_batch(model, features, labels, optimizer, criterion)
+        loss = train_batch(model, features.to(device), labels.to(device), optimizer, criterion)
         running_loss += loss * features.size(0)
 
     mean_loss = running_loss / len(training_dataloader)
@@ -91,13 +92,15 @@ def train_batch(model: PhonePriceClassifier, features: torch.Tensor, labels: tor
     return loss.item()
 
 
-def evaluate_model(model: PhonePriceClassifier, test_dataloader: DataLoader, criterion: nn.CrossEntropyLoss):
+def evaluate_model(model, test_dataloader, criterion, device):
     model.eval()
     running_loss = 0.0
     correct_inferences = 0
 
     for features, labels in tqdm(test_dataloader, "Test"):
         with torch.no_grad():
+            features = features.to(device)
+            labels = labels.to(device)
             logits = model(features)
             loss = criterion(logits, labels)
             running_loss += loss.item() * features.size(0)
@@ -117,14 +120,17 @@ def begin_training_run(rank, world_size):
 
     # Init the training setup
     epochs = 1000
-    model = PhonePriceClassifier()
+    rank = dist.get_rank()
+    device = torch.device("cuda", rank) if torch.cuda.is_available() else torch.device("cpu", rank)
+    model = PhonePriceClassifier().to(device)
+    model = parallel.DistributedDataParallel(model)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=0.0003)
 
     for epoch_counter in range(1, epochs + 1):
         print(f"\n--- Epoch {epoch_counter} ----\n")
-        train_model(model, training_dataloader, optimizer, criterion)
-        evaluate_model(model, test_dataloader, criterion)
+        train_model(model, training_dataloader, optimizer, criterion, device)
+        evaluate_model(model, test_dataloader, criterion, device)
 
 
 def init_process(rank, world_size, function):
@@ -133,11 +139,13 @@ def init_process(rank, world_size, function):
     dist.init_process_group("nccl", rank=rank, world_size=world_size)
     function(rank, world_size)
 
+
 def main():
+    torch.multiprocessing.set_start_method("spawn")
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--world_size", type=int, default=1, help="The number of processes avaliable for training")
     args = parser.parse_args()
-
     processes = []
 
     for rank in range(args.world_size):
@@ -149,7 +157,6 @@ def main():
         p.join()
 
     print('finished')
-
 
 
 if __name__ == "__main__":
