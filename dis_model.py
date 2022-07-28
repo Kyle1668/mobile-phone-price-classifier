@@ -1,8 +1,12 @@
 """Used to create the neurel network"""
+import os
+import argparse
 from tqdm import tqdm
 import torch
 import pandas as pd
 from torch import nn, optim
+import torch.distributed as dist
+from torch.multiprocessing import Process
 from torch.utils.data import Dataset, DataLoader
 
 
@@ -33,7 +37,7 @@ class PhonePriceClassifier(nn.Module):
     def __init__(self, dropout_percent=0.1):
         super(PhonePriceClassifier, self).__init__()
         self.linear_relu_stack = nn.Sequential(
-            nn.Linear(18, 100),
+            nn.Linear(20, 100),
             nn.ReLU(),
             nn.Linear(100, 100),
             nn.ReLU(),
@@ -104,7 +108,7 @@ def evaluate_model(model: PhonePriceClassifier, test_dataloader: DataLoader, cri
     print(f"\nTest Mean Loss = {mean_loss} | Accuracy = {accuracy}%\n")
 
 
-def main():
+def begin_training_run(rank, world_size):
      # Set up data for feeding into our model during training and evaluation
     test_set = PhonePricesDataSet("./data/test.csv")
     training_set = PhonePricesDataSet("./data/train.csv")
@@ -121,6 +125,31 @@ def main():
         print(f"\n--- Epoch {epoch_counter} ----\n")
         train_model(model, training_dataloader, optimizer, criterion)
         evaluate_model(model, test_dataloader, criterion)
+
+
+def init_process(rank, world_size, function):
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
+    os.environ["MASTER_PORT"] = "8080"
+    dist.init_process_group("nccl", rank=rank, world_size=world_size)
+    function(rank, world_size)
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--world_size", type=int, default=1, help="The number of processes avaliable for training")
+    args = parser.parse_args()
+
+    processes = []
+
+    for rank in range(args.world_size):
+        proc = Process(target=init_process, args=(rank, args.world_size, begin_training_run))
+        proc.start()
+        processes.append(proc)
+
+    for p in processes:
+        p.join()
+
+    print('finished')
+
 
 
 if __name__ == "__main__":
